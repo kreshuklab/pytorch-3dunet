@@ -1,6 +1,6 @@
 import numpy as np
 
-from pytorch3dunet.augment.transforms import RandomLabelToAffinities, LabelToAffinities, Transformer, Relabel, \
+from shallow2deep.augment.transforms import RandomLabelToAffinities, LabelToAffinities, Transformer, Relabel, \
     CropToFixed
 
 

@@ -5,10 +5,10 @@ import h5py
 import numpy as np
 import torch
 
-from pytorch3dunet.datasets.utils import get_test_loaders
-from pytorch3dunet.predict import _get_predictor
-from pytorch3dunet.unet3d.model import get_model
-from pytorch3dunet.unet3d.utils import remove_halo
+from shallow2deep.datasets.utils import get_test_loaders
+from shallow2deep.predict import _get_predictor
+from shallow2deep.unet3d.model import get_model
+from shallow2deep.unet3d.utils import remove_halo
 
 
 class TestPredictor:

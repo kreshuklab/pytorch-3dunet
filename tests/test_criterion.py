@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 from skimage import measure
 
-from pytorch3dunet.augment.transforms import LabelToAffinities, StandardLabelToBoundary
-from pytorch3dunet.unet3d.losses import GeneralizedDiceLoss, WeightedCrossEntropyLoss, \
+from shallow2deep.augment.transforms import LabelToAffinities, StandardLabelToBoundary
+from shallow2deep.unet3d.losses import GeneralizedDiceLoss, WeightedCrossEntropyLoss, \
     DiceLoss, WeightedSmoothL1Loss, _MaskingLossWrapper, SkipLastTargetChannelWrapper, BCEDiceLoss
-from pytorch3dunet.unet3d.metrics import DiceCoefficient, MeanIoU, BoundaryAveragePrecision, AdaptedRandError, \
+from shallow2deep.unet3d.metrics import DiceCoefficient, MeanIoU, BoundaryAveragePrecision, AdaptedRandError, \
     BoundaryAdaptedRandError
 
 

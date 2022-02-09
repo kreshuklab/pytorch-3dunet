@@ -5,12 +5,12 @@ import h5py
 import numpy as np
 import torch
 
-from pytorch3dunet.datasets.utils import get_train_loaders
-from pytorch3dunet.unet3d.losses import get_loss_criterion
-from pytorch3dunet.unet3d.metrics import get_evaluation_metric
-from pytorch3dunet.unet3d.model import get_model
-from pytorch3dunet.unet3d.trainer import UNet3DTrainer
-from pytorch3dunet.unet3d.utils import DefaultTensorboardFormatter, create_optimizer, create_lr_scheduler
+from shallow2deep.datasets.utils import get_train_loaders
+from shallow2deep.unet3d.losses import get_loss_criterion
+from shallow2deep.unet3d.metrics import get_evaluation_metric
+from shallow2deep.unet3d.model import get_model
+from shallow2deep.unet3d.trainer import UNet3DTrainer
+from shallow2deep.unet3d.utils import DefaultTensorboardFormatter, create_optimizer, create_lr_scheduler
 
 
 class TestUNet3DTrainer:

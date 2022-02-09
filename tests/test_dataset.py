@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 from torch.utils.data import DataLoader
 
-from pytorch3dunet.datasets.hdf5 import StandardHDF5Dataset, AbstractHDF5Dataset
+from shallow2deep.datasets.hdf5 import StandardHDF5Dataset, AbstractHDF5Dataset
 
 
 class TestHDF5Dataset:
