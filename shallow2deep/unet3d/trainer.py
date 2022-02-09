@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 
+from shallow2deep.augment.transforms import ConsistentRandomFlip, ConsistentRandomRotate90, GLOBAL_RANDOM_STATE
 from shallow2deep.datasets.utils import get_train_loaders
 from shallow2deep.unet3d.losses import get_loss_criterion
 from shallow2deep.unet3d.metrics import get_evaluation_metric
@@ -34,6 +35,8 @@ def create_trainer(config):
 
     # Create loss criterion
     loss_criterion = get_loss_criterion(config)
+    consistency_loss_criterion = get_loss_criterion(
+        dict(config, **{"loss": config["consistency_loss"]})) if config.get("consistency_loss") else None
     # Create evaluation metric
     eval_criterion = get_evaluation_metric(config)
 
@@ -52,17 +55,20 @@ def create_trainer(config):
     # Create trainer
     resume = trainer_config.pop('resume', None)
     pre_trained = trainer_config.pop('pre_trained', None)
+    consistency = trainer_config.pop('consistency', False)
 
     return UNet3DTrainer(model=model,
                          optimizer=optimizer,
                          lr_scheduler=lr_scheduler,
                          loss_criterion=loss_criterion,
+                         consistency_loss_criterion=consistency_loss_criterion,
                          eval_criterion=eval_criterion,
                          tensorboard_formatter=tensorboard_formatter,
                          device=config['device'],
                          loaders=loaders,
                          resume=resume,
                          pre_trained=pre_trained,
+                         consistency=consistency,
                          **trainer_config)
 
 
@@ -105,12 +111,13 @@ class UNet3DTrainer:
                  validate_iters=None, num_iterations=1, num_epoch=0,
                  eval_score_higher_is_better=True,
                  tensorboard_formatter=None, skip_train_validation=False,
-                 resume=None, pre_trained=None, **kwargs):
+                 resume=None, pre_trained=None, consistency=False, consistency_loss_criterion=None, **kwargs):
 
         self.model = model
         self.optimizer = optimizer
         self.scheduler = lr_scheduler
         self.loss_criterion = loss_criterion
+        self.consistency_loss_criterion = consistency_loss_criterion
         self.eval_criterion = eval_criterion
         self.device = device
         self.loaders = loaders
@@ -121,6 +128,7 @@ class UNet3DTrainer:
         self.log_after_iters = log_after_iters
         self.validate_iters = validate_iters
         self.eval_score_higher_is_better = eval_score_higher_is_better
+        self.consistency = consistency
 
         logger.info(model)
         logger.info(f'eval_score_higher_is_better: {eval_score_higher_is_better}')
@@ -156,6 +164,13 @@ class UNet3DTrainer:
             utils.load_checkpoint(pre_trained, self.model, None)
             if 'checkpoint_dir' not in kwargs:
                 self.checkpoint_dir = os.path.split(pre_trained)[0]
+
+        if not self.consistency:
+            self._forward_pass = self._forward_pass_base
+        else:
+            self._forward_pass = self._forward_pass_with_consistency
+            self.consistent_rotation = ConsistentRandomRotate90(GLOBAL_RANDOM_STATE)
+            self.consistent_flip = ConsistentRandomFlip(GLOBAL_RANDOM_STATE)
 
     def fit(self):
         for _ in range(self.num_epochs, self.max_num_epochs):
@@ -220,6 +235,10 @@ class UNet3DTrainer:
             if self.num_iterations % self.log_after_iters == 0:
                 # compute eval criterion
                 if not self.skip_train_validation:
+
+                    if self.model.final_activation:
+                        output=self.model.final_activation(output)
+
                     eval_score = self.eval_criterion(output, target)
                     train_eval_scores.update(eval_score.item(), self._batch_size(input))
 
@@ -298,7 +317,7 @@ class UNet3DTrainer:
             input, target, weight = t
         return input, target, weight
 
-    def _forward_pass(self, input, target, weight=None):
+    def _forward_pass_base(self, input, target, weight=None):
         # forward pass
         output = self.model(input)
 
@@ -309,6 +328,38 @@ class UNet3DTrainer:
             loss = self.loss_criterion(output, target, weight)
 
         return output, loss
+
+    def _forward_pass_with_consistency(self, input, target, weight=None):
+
+        if not self.model.training:
+            return self._forward_pass_base(input, target, weight)
+
+        cf_rvd = self.consistent_flip.precompute_random_variables()
+        cr_rv = self.consistent_rotation.precompute_random_variables()
+
+        input_q, input_k = input
+
+        # apply consistency trafos to output_q and target
+        input_q = self.consistent_rotation(self.consistent_flip(input_q, cf_rvd), cr_rv)
+        target = self.consistent_rotation(self.consistent_flip(target, cf_rvd), cr_rv)
+
+        # forward pass
+        output_q, output_k = self.model((input_q, input_k))
+
+        # The consistency target has to be transformed to a "target"
+        if self.model.final_activation:
+            output_k = self.model.final_activation(output_k)
+
+        # apply same consistency trafos to output_k
+        output_k = self.consistent_rotation(self.consistent_flip(output_k, cf_rvd), cr_rv)
+
+        # compute the loss
+        loss = self.loss_criterion(output_q, target)
+
+        # compute the consistency loss
+        consistency_loss = self.consistency_loss_criterion(output_q, output_k)
+
+        return output_q, loss + consistency_loss
 
     def _is_best_eval_score(self, eval_score):
         if self.eval_score_higher_is_better:
@@ -358,7 +409,8 @@ class UNet3DTrainer:
         logger.info('Logging model parameters and gradients')
         for name, value in self.model.named_parameters():
             self.writer.add_histogram(name, value.data.cpu().numpy(), self.num_iterations)
-            self.writer.add_histogram(name + '/grad', value.grad.data.cpu().numpy(), self.num_iterations)
+            if value.grad is not None:
+                self.writer.add_histogram(name + '/grad', value.grad.data.cpu().numpy(), self.num_iterations)
 
     def _log_images(self, input, target, prediction, prefix=''):
         if self.model.training:

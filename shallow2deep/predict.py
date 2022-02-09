@@ -16,7 +16,7 @@ def _get_predictor(model, output_dir, config):
     predictor_config = config.get('predictor', {})
     class_name = predictor_config.get('name', 'StandardPredictor')
 
-    m = importlib.import_module('pytorch3dunet.unet3d.predictor')
+    m = importlib.import_module('shallow2deep.unet3d.predictor')
     predictor_class = getattr(m, class_name)
 
     return predictor_class(model, output_dir, config, **predictor_config)

@@ -437,6 +437,18 @@ class MSE:
         return mean_squared_error(input, target)
 
 
+class _RoundTargetWrapper:
+    """
+    Loss wrapper which prevents the gradient of the loss to be computed where target is equal to `ignore_index`.
+    """
+
+    def __init__(self, metric):
+        self.metric = metric
+
+    def __call__(self, input, target):
+        return self.metric(input, torch.round(target))
+
+
 def get_evaluation_metric(config):
     """
     Returns the evaluation metric function based on provided configuration
@@ -445,11 +457,16 @@ def get_evaluation_metric(config):
     """
 
     def _metric_class(class_name):
-        m = importlib.import_module('pytorch3dunet.unet3d.metrics')
+        m = importlib.import_module('shallow2deep.unet3d.metrics')
         clazz = getattr(m, class_name)
         return clazz
 
     assert 'eval_metric' in config, 'Could not find evaluation metric configuration'
     metric_config = config['eval_metric']
     metric_class = _metric_class(metric_config['name'])
-    return metric_class(**metric_config)
+    metric = metric_class(**metric_config)
+
+    if not metric_config.get("do_not_round_target", False):
+        metric = _RoundTargetWrapper(metric)
+
+    return metric

@@ -22,6 +22,8 @@ class AbstractHDF5Dataset(ConfigDataset):
                  phase,
                  slice_builder_config,
                  transformer_config,
+                 consistency_config,
+                 consistency,
                  mirror_padding=(16, 32, 32),
                  raw_internal_path='raw',
                  label_internal_path='label',
@@ -60,6 +62,21 @@ class AbstractHDF5Dataset(ConfigDataset):
             stats = calculate_stats(self.raw)
         else:
             stats = {'pmin': None, 'pmax': None, 'mean': None, 'std': None}
+
+        self.consistency = consistency
+
+        if self.consistency and self.phase == "train":
+            post_config = {"raw": []}
+            if transformer_config["raw"]:
+                if transformer_config["raw"][-1]["name"] == "ToTensor":
+                    post_config["raw"].append(transformer_config["raw"][-1])
+                    del transformer_config["raw"][-1]
+
+
+            self.consistency_transformer = transforms.Transformer(consistency_config, stats)
+            self.consistency_raw_transform = self.consistency_transformer.raw_transform()
+            self.post_transformer = transforms.Transformer(post_config, stats)
+            self.post_raw_transform = self.post_transformer.raw_transform()
 
         self.transformer = transforms.Transformer(transformer_config, stats)
         self.raw_transform = self.transformer.raw_transform()
@@ -117,7 +134,6 @@ class AbstractHDF5Dataset(ConfigDataset):
         raw_idx = self.raw_slices[idx]
         # get the raw data patch for a given slice
         raw_patch_transformed = self.raw_transform(self.raw[raw_idx])
-
         if self.phase == 'test':
             # discard the channel dimension in the slices: predictor requires only the spatial dimensions of the volume
             if len(raw_idx) == 4:
@@ -131,6 +147,15 @@ class AbstractHDF5Dataset(ConfigDataset):
                 weight_idx = self.weight_slices[idx]
                 weight_patch_transformed = self.weight_transform(self.weight_map[weight_idx])
                 return raw_patch_transformed, label_patch_transformed, weight_patch_transformed
+
+            if self.consistency and self.phase == "train":
+                raw_consistency = self.consistency_raw_transform(raw_patch_transformed)
+
+                raw_patch_transformed = self.post_raw_transform(raw_patch_transformed)
+                raw_consistency = self.post_raw_transform(raw_consistency)
+
+                return (raw_patch_transformed, raw_consistency), label_patch_transformed
+
             # return the transformed raw and label patches
             return raw_patch_transformed, label_patch_transformed
 
@@ -159,6 +184,7 @@ class AbstractHDF5Dataset(ConfigDataset):
 
         # load data augmentation configuration
         transformer_config = phase_config['transformer']
+        consistency_config = phase_config.get('consistency_transformer', {"raw": []})
         # load slice builder config
         slice_builder_config = phase_config['slice_builder']
         # load files to process
@@ -175,6 +201,8 @@ class AbstractHDF5Dataset(ConfigDataset):
                               phase=phase,
                               slice_builder_config=slice_builder_config,
                               transformer_config=transformer_config,
+                              consistency_config=consistency_config,
+                              consistency=dataset_config.get("consistency", False),
                               mirror_padding=dataset_config.get('mirror_padding', None),
                               raw_internal_path=dataset_config.get('raw_internal_path', 'raw'),
                               label_internal_path=dataset_config.get('label_internal_path', 'label'),
@@ -206,13 +234,16 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
     Fast but might consume a lot of memory.
     """
 
-    def __init__(self, file_path, phase, slice_builder_config, transformer_config, mirror_padding=(16, 32, 32),
+    def __init__(self, file_path, phase, slice_builder_config, transformer_config, consistency_config,
+                 consistency, mirror_padding=(16, 32, 32),
                  raw_internal_path='raw', label_internal_path='label', weight_internal_path=None,
                  global_normalization=True):
         super().__init__(file_path=file_path,
                          phase=phase,
                          slice_builder_config=slice_builder_config,
                          transformer_config=transformer_config,
+                         consistency_config=consistency_config,
+                         consistency=consistency,
                          mirror_padding=mirror_padding,
                          raw_internal_path=raw_internal_path,
                          label_internal_path=label_internal_path,
@@ -227,13 +258,16 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
 class LazyHDF5Dataset(AbstractHDF5Dataset):
     """Implementation of the HDF5 dataset which loads the data lazily. It's slower, but has a low memory footprint."""
 
-    def __init__(self, file_path, phase, slice_builder_config, transformer_config, mirror_padding=(16, 32, 32),
+    def __init__(self, file_path, phase, slice_builder_config, transformer_config, consistency_config,
+                 consistency, mirror_padding=(16, 32, 32),
                  raw_internal_path='raw', label_internal_path='label', weight_internal_path=None,
                  global_normalization=False):
         super().__init__(file_path=file_path,
                          phase=phase,
                          slice_builder_config=slice_builder_config,
                          transformer_config=transformer_config,
+                         consistency_config=consistency_config,
+                         consistency=consistency,
                          mirror_padding=mirror_padding,
                          raw_internal_path=raw_internal_path,
                          label_internal_path=label_internal_path,

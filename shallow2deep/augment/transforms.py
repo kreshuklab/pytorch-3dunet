@@ -72,6 +72,75 @@ class RandomRotate90:
         return m
 
 
+class ConsistentRandomFlip:
+    """
+    Randomly flips the image across the given axes. Image can be either 3D (DxHxW) or 4D (CxDxHxW).
+
+    When creating make sure that the provided RandomStates are consistent between raw and labeled datasets,
+    otherwise the models won't converge.
+    """
+
+    def __init__(self, random_state, axis_prob=0.5, **kwargs):
+        assert random_state is not None, 'RandomState cannot be None'
+        self.random_state = random_state
+        self.axes = (0, 1, 2)
+        self.axis_prob = axis_prob
+
+    def precompute_random_variables(self):
+        return {axis: [self.random_state.uniform() > self.axis_prob] for axis in self.axes}
+
+    def flip_single_image(self, m, rvd):
+        assert m.ndim in [3, 4], 'Supports only 3D (DxHxW) or 4D (CxDxHxW) images'
+
+        for axis in self.axes:
+            if rvd[axis]:
+                if m.ndim == 3:
+                    m = torch.flip(m, [axis])
+                else:
+                    channels = [torch.flip(m[c], [axis]) for c in range(m.shape[0])]
+                    m = torch.stack(channels, dim=0)
+        return m
+
+    def __call__(self, bm, rvd):
+        assert bm.ndim == 5, "Supports only 5D (BxCxDxHxW), only used during consistency training"
+        return torch.stack([self.flip_single_image(m, rvd) for m in bm], dim=0)
+
+
+class ConsistentRandomRotate90:
+    """
+    Rotate an array by 90 degrees around a randomly chosen plane. Image can be either 3D (DxHxW) or 4D (CxDxHxW).
+
+    When creating make sure that the provided RandomStates are consistent between raw and labeled datasets,
+    otherwise the models won't converge.
+
+    IMPORTANT: assumes DHW axis order (that's why rotation is performed across (1,2) axis)
+    """
+
+    def __init__(self, random_state, **kwargs):
+        self.random_state = random_state
+        # always rotate around z-axis
+        self.axis = (1, 2)
+
+    def precompute_random_variables(self):
+        return self.random_state.randint(0, 4)
+
+    def rotate_single_image(self, m, k):
+        assert m.ndim in [3, 4], 'Supports only 3D (DxHxW) or 4D (CxDxHxW) images'
+
+        # rotate k times around a given plane
+        if m.ndim == 3:
+            m = torch.rot90(m, k, self.axis)
+        else:
+            channels = [torch.rot90(m[c], k, self.axis) for c in range(m.shape[0])]
+            m = torch.stack(channels, dim=0)
+
+        return m
+
+    def __call__(self, bm, k):
+        assert bm.ndim == 5, "Supports only 5D (BxCxDxHxW), only used during consistency training"
+        return torch.stack([self.rotate_single_image(m, k) for m in bm], dim=0)
+
+
 class RandomRotate:
     """
     Rotate an array by a random degrees from taken from (-angle_spectrum, angle_spectrum) interval.
@@ -701,7 +770,7 @@ class Transformer:
 
     @staticmethod
     def _transformer_class(class_name):
-        m = importlib.import_module('pytorch3dunet.augment.transforms')
+        m = importlib.import_module('shallow2deep.augment.transforms')
         clazz = getattr(m, class_name)
         return clazz
 

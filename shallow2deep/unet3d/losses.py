@@ -256,6 +256,99 @@ class WeightedSmoothL1Loss(nn.SmoothL1Loss):
 
         return l1.mean()
 
+class RectificationLoss(nn.Module):
+    """Rectification Loss base"""
+
+    def __init__(self, **kwargs):
+        super(RectificationLoss, self).__init__()
+        self.lam = kwargs.pop("lambda", 0.9999)
+        self.mean_init = kwargs.pop("mean_init", 1.0)
+        self.mean_prob_fg = torch.tensor(self.mean_init)
+        self.mean_prob_bg = torch.tensor(self.mean_init)
+
+    def forward(self, input, target):
+        target = target
+
+        fg_input_probs = torch.sigmoid(input)
+        bg_input_probs = torch.sigmoid(torch.tensor(-1.0) * input)
+
+        fg_input_scales = 1 - torch.abs(fg_input_probs - self.mean_prob_fg)
+        bg_input_scales = 1 - torch.abs(bg_input_probs - self.mean_prob_bg)
+
+        fg_target_probs_orig = target
+        bg_target_probs_orig = torch.tensor(1.0) - target
+
+        fg_target_probs = fg_target_probs_orig * fg_input_scales
+        bg_target_probs = bg_target_probs_orig * bg_input_scales
+
+        fg_target_probs = fg_target_probs.detach()
+        bg_target_probs = bg_target_probs.detach()
+
+        self.update_mean_probs(fg_input_probs=fg_input_probs, bg_input_probs=bg_input_probs,
+                               fg_target_probs=fg_target_probs_orig, bg_target_probs=bg_target_probs_orig)
+
+        return self.loss(
+            fg_input_probs=fg_input_probs,
+            bg_input_probs=bg_input_probs,
+            fg_target_probs=fg_target_probs,
+            bg_target_probs=bg_target_probs, )
+
+    def loss(
+            self,
+            fg_input_probs,
+            bg_input_probs,
+            fg_target_probs,
+            bg_target_probs,
+
+    ):
+        raise NotImplementedError
+
+    def update_mean_probs(
+            self,
+            fg_input_probs,
+            bg_input_probs,
+            bg_target_probs,
+            fg_target_probs,
+
+    ):
+        all_fg_pixels = fg_input_probs[fg_target_probs >= 0.5].detach()
+        if len(all_fg_pixels):
+            self.mean_prob_fg = (1.0 - self.lam) * torch.mean(all_fg_pixels) + self.lam * self.mean_prob_fg
+
+        all_bg_pixels = bg_input_probs[bg_target_probs >= 0.5].detach()
+        if len(all_bg_pixels):
+            self.mean_prob_bg = (1.0 - self.lam) * torch.mean(all_bg_pixels) + self.lam * self.mean_prob_bg
+
+
+class RectificationBCEWithLogitsLoss(RectificationLoss):
+    def loss(
+            self,
+            fg_input_probs,
+            bg_input_probs,
+            fg_target_probs,
+            bg_target_probs,
+    ):
+        y_foreground = fg_target_probs
+        y_background = bg_target_probs
+
+        log_p_foreground = torch.clamp(torch.log(fg_input_probs), min=-100)
+        log_p_background = torch.clamp(torch.log(bg_input_probs), min=-100)
+
+        return -torch.mean(
+            y_foreground * log_p_foreground + y_background * log_p_background
+        )
+
+
+class RectificationDiceLoss(RectificationLoss):
+    def loss(
+            self,
+            fg_target_probs,
+            bg_target_probs,
+            fg_input_probs,
+            bg_input_probs,
+    ):
+        return 1 - torch.mean(compute_per_channel_dice(fg_input_probs, fg_target_probs))
+
 
 def flatten(tensor):
     """Flattens a given tensor such that the channel axis is first.
@@ -312,6 +405,14 @@ def get_loss_criterion(config):
 def _create_loss(name, loss_config, weight, ignore_index, pos_weight):
     if name == 'BCEWithLogitsLoss':
         return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    elif name == "RectificationBCEWithLogitsLoss":
+        lam = loss_config.get("lambda", 0.9999)
+        mean_init = loss_config.get("mean_init", 1.0)
+        return RectificationBCEWithLogitsLoss(lam=lam,mean_init=mean_init)
+    elif name == "RectificationDiceLoss":
+        lam = loss_config.get("lambda", 0.9999)
+        mean_init = loss_config.get("mean_init", 1.0)
+        return RectificationDiceLoss(lam=lam,mean_init=mean_init)
     elif name == 'BCEDiceLoss':
         alpha = loss_config.get('alphs', 1.)
         beta = loss_config.get('beta', 1.)

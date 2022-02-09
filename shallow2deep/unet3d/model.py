@@ -1,3 +1,6 @@
+from copy import deepcopy
+
+import torch
 import torch.nn as nn
 
 from shallow2deep.unet3d.buildingblocks import DoubleConv, ExtResNetBlock, create_encoders, \
@@ -166,6 +169,56 @@ class UNet2D(Abstract3DUNet):
                                      **kwargs)
 
 
+class ConsistencyModel(nn.Module):
+    def __init__(self, model, smoothing_coefficient=0.999, **kwargs):
+        super(ConsistencyModel, self).__init__()
+
+        self.model_q = model
+        self.model_k = deepcopy(model)
+        self.m = smoothing_coefficient
+        self.testing = False
+
+    @torch.no_grad()
+    def _momentum_update(self):
+        """
+        Momentum update of the model_k
+        """
+        for param_q, param_k in zip(self.model_q.parameters(), self.model_k.parameters()):
+            param_k.data = param_k.data * self.m + param_q.data * (1.0 - self.m)
+
+    def forward(self, input):
+        """
+        Input:
+            im_q: a batch of query images
+            im_k: a batch of key images
+        Output:
+            Predictions for im_q, predictions for im_k
+        """
+        if not self.training:
+            # model_q will apply final activation
+            output_q = self.model_q(input)
+            return output_q
+
+        input_q, input_k = input
+
+        with torch.no_grad():  # no gradient
+            self._momentum_update()
+            output_k = self.model_k(input_k)
+
+        output_q = self.model_q(input_q)
+
+        return output_q, output_k
+
+    @property
+    def final_activation(self):
+        return self.model_q.final_activation
+
+
 def get_model(model_config):
-    model_class = get_class(model_config['name'], modules=['pytorch3dunet.unet3d.model'])
+    if model_config['name'][:10] == "Consistent":
+        model_class = get_class(model_config['name'][10:], modules=['shallow2deep.unet3d.model'])
+        smoothing_coefficient = model_config.get("smoothing_coefficient", 0.999)
+        return ConsistencyModel(model=model_class(**model_config), smoothing_coefficient=smoothing_coefficient)
+
+    model_class = get_class(model_config['name'], modules=['shallow2deep.unet3d.model'])
     return model_class(**model_config)
