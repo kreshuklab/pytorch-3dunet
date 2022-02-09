@@ -1,12 +1,12 @@
-name: 3dunet
+name: shallow2deep
 
 channels:
-  - conda-forge
   - pytorch
+  - conda-forge
 
 dependencies:
-  - python 3.8
-  - pytorch
+  - python=3.8
+  - pytorch=1.10.2
   - torchvision
   - tensorboard
   - h5py
@@ -16,3 +16,5 @@ dependencies:
   - pyyaml
   - pytest
   - matplotlib
+  - setuptools=59.5.0  # this fixes incompatibilities
+  - python-elf
