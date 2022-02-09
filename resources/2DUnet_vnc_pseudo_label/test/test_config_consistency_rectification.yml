@@ -1,0 +1,50 @@
+manual_seed: 0
+model:
+  name: ConsistentUNet2D
+  in_channels: 1
+  out_channels: 1
+  layer_order: gcr
+  num_groups: 8
+  f_maps: 64
+  num_levels: 5
+  final_sigmoid: true
+model_path: '/scratch/matskevy/epfl_to_vnc/nn_data/pseudo_label_net/train_epfl_to_vnc_consistency_rectification/best_checkpoint.pytorch'
+predictor:
+  name: 'StandardPredictor'
+  patch_halo: [ 0,16,16 ]
+
+loaders:
+  # batch dimension; if number of GPUs is N > 1, then a batch_size of N * batch_size will automatically be taken for DataParallel
+  batch_size: 1
+  # mirror pad the raw data in each axis for sharper prediction near the boundaries of the volume
+  mirror_padding: [0, 0, 0]
+  # path to the raw data within the H5
+  raw_internal_path: raw
+  # how many subprocesses to use for data loading
+  num_workers: 12
+  output_dir: "/scratch/matskevy/epfl_to_vnc/nn_data/pseudo_label_net/epfl_to_vnc_mito_predictions_consistency_rectification/"
+  test:
+    # paths to the test datasets; if a given path is a directory all H5 files ('*.h5', '*.hdf', '*.hdf5', '*.hd5')
+    # inside this this directory will be included as well (non-recursively)
+    file_paths:
+      - '/scratch/matskevy/vnc_2d_mitos/test.h5'
+
+    # SliceBuilder configuration, i.e. how to iterate over the input volume patch-by-patch
+    slice_builder:
+      # SliceBuilder class
+      name: SliceBuilder
+      # train patch size given to the network (adapt to fit in your GPU mem, generally the bigger patch the better)
+      patch_shape:
+      - 1
+      - 1024
+      - 1024
+      stride_shape:
+      - 1
+      - 400
+      - 512
+
+    transformer:
+        raw:
+          # apply min-max scaling and map the input to [-1, 1]
+          - name: ToTensor
+            expand_dims: true

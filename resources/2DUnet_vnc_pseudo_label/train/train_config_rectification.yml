@@ -1,0 +1,106 @@
+manual_seed: 0
+model:
+  name: UNet2D
+  in_channels: 1
+  out_channels: 1
+  layer_order: gcr
+  num_groups: 8
+  f_maps: 64
+  num_levels: 5
+  final_sigmoid: true
+trainer:
+  checkpoint_dir: '/scratch/matskevy/epfl_to_vnc/nn_data/pseudo_label_net/train_epfl_to_vnc_rectification/'
+  validate_after_iters: 200
+  log_after_iters: 200
+  max_num_epochs: 10000
+  max_num_iterations: 250000
+  eval_score_higher_is_better: True
+  validate_iters: 50
+optimizer:
+  learning_rate: 0.0002
+  weight_decay: 0.00001
+loss:
+  name: RectificationBCEWithLogitsLoss
+  skip_last_target: false
+eval_metric:
+  name: MeanIoU
+  use_last_target: true
+lr_scheduler:
+  name: ReduceLROnPlateau
+  mode: max
+  factor: 0.2
+  patience: 30
+loaders:
+  dataset: LazyHDF5Dataset
+  batch_size: 1 # TODO: batch size
+  num_workers: 12
+  raw_internal_path: raw
+  label_internal_path: pseudo_label
+
+  train:
+    file_paths:
+      - "/scratch/matskevy/epfl_to_vnc/nn_data/enhancer/epfl_to_vnc_mito_predictions/ilastik_predicted_training_predictions.h5"
+
+    slice_builder:
+      name: SliceBuilder
+      patch_shape:
+      - 1
+      - 1024
+      - 1024
+      stride_shape:
+      - 1
+      - 512
+      - 512
+      skip_shape_check: true
+
+    transformer:
+      label:
+      - name: RandomFlip
+      - name: RandomRotate90
+      - angle_spectrum: 20
+        axes: [[2, 1]]
+        mode: reflect
+        name: RandomRotate
+      - name: ElasticDeformation
+        spline_order: 0
+      - expand_dims: true
+        name: ToTensor
+      raw:
+      - name: RandomFlip
+      - name: RandomRotate90
+      - angle_spectrum: 20
+        axes: [[2, 1]]
+        mode: reflect
+        name: RandomRotate
+      - name: ElasticDeformation
+        spline_order: 3
+      - name: AdditiveGaussianNoise
+        execution_probability: 0.25
+      - name: AdditivePoissonNoise
+        execution_probability: 0.25
+      - expand_dims: true
+        name: ToTensor
+
+  val:
+    file_paths:
+      - "/scratch/matskevy/epfl_to_vnc/nn_data/enhancer/epfl_to_vnc_mito_predictions/ilastik_predicted_validation_predictions.h5"
+
+    slice_builder:
+      name: SliceBuilder
+      patch_shape:
+      - 1
+      - 1024
+      - 1024
+      stride_shape:
+      - 1
+      - 1024
+      - 1024
+      skip_shape_check: true
+
+    transformer:
+      label:
+      - expand_dims: true
+        name: ToTensor
+      raw:
+      - expand_dims: true
+        name: ToTensor
