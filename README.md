@@ -2,15 +2,18 @@
 
 ![alt text](./img/combined_image_without_alpha.png)
 
-This repository provides a PyTorch implementation of our method from the [paper](https://www.biorxiv.org/content/10.1101/2021.11.09.467925v1):
+This repository provides a PyTorch implementation of our method from the [paper](https://www.frontiersin.org/articles/10.3389/fcomp.2022.805166/full):
 
 ```
-@article{matskevych2021shallow,
-  title={From shallow to deep: exploiting feature-based classifiers for domain adaptation in semantic segmentation},
-  author={Matskevych, Alex and Wolny, Adrian and Pape, Constantin and Kreshuk, Anna},
-  journal={bioRxiv},
-  year={2021},
-  publisher={Cold Spring Harbor Laboratory}
+@article{article,
+author = {Matskevych, Alex and Wolny, Adrian and Pape, Constantin and Kreshuk, Anna},
+year = {2022},
+month = {03},
+pages = {},
+title = {From Shallow to Deep: Exploiting Feature-Based Classifiers for Domain Adaptation in Semantic Segmentation},
+volume = {4},
+journal = {Frontiers in Computer Science},
+doi = {10.3389/fcomp.2022.805166}
 }
 ```
 
